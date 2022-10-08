@@ -1,5 +1,5 @@
-import { actions, assign, createMachine, interpret, send } from 'xstate';
-import { raise } from 'xstate/lib/actions';
+import { assign, createMachine } from 'xstate';
+// import { raise } from 'xstate/lib/actions';
 
 export const propertyMachine = createMachine({
     id: 'property',

@@ -1,8 +1,10 @@
 import { interpret } from 'xstate';
-import { debug } from "console";
+// import { debug } from "console";
 import { createDevTools, inspect } from '../src';
 import { behaviorMachine } from '../models/simpleWrongMessage/bsm'
-import { readTraces } from '../src/robustnessAnalysis'
+import { propertyMachine } from '../models/simpleWrongMessage/psm';
+import { getTrace, replay, staticAnalysis} from '../src/robustnessAnalysis'
+// import { debug } from 'console';
 
 afterEach(() => {
   // this clears timers, removes global listeners etc
@@ -220,25 +222,25 @@ it('simpleWrongMessage senario', () => {
   const service = interpret(behaviorMachine, {
     devTools: true,
   }).start();
+
+  // let stateJSON = JSON.parse(behaviorMachine)
+  // debug(stateJSON)
+
   const devTools = createDevTools();
   const iframeMock = createIframeMock();
   devTools.register(service);
   inspect({iframe: iframeMock.iframe,devTools,});
   iframeMock.initConnection();
 
-  //[1]. Read traces 
-  //[2]. Send the message + (non-reproduceable values) to the intepreter of BSM
-  service.send({type:'t2'});
-  //[3]. Process the output from the interpreter to extract critical values
-  let stt = "";
-  iframeMock
-              .flushMessages()
-              .filter((message: any) => message.type === 'service.state')
-              .filter((message: any) => stt = message.state);
-  // debug(stt);
-  let stateJSON = JSON.parse(stt)
-  debug(stateJSON.transitions[0].target);
-  readTraces();
+  //[1]. Read traces
+  let trace = getTrace(0);
+  replay(iframeMock, service, trace)
+  trace = getTrace(1);
+  replay(iframeMock, service, trace)
+
+  staticAnalysis(behaviorMachine,propertyMachine)
+
+  
 
   //[4]. Send the message + values to the interpreter of PSM
 

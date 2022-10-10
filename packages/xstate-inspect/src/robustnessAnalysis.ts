@@ -4,85 +4,231 @@ export {
   createWebSocketReceiver,
   createDevTools
 } from './browser';
+import { createDevTools, inspect } from '../src';
 import { readFileSync } from 'fs';
-// import { State } from 'xstate';
-
-
+import { interpret } from 'xstate';
+var Graph = require("graph-data-structure");
 
 
 window.open = jest.fn();
 
 
-function readTraces(path) {
-  const file = readFileSync(path, 'utf-8');
-  const traces = file.split('\n');
-  return traces;
+ 
+export class RobustnessAnalysis {
+  tracePath = "";
+  traces = Array();
+  behaviorMachine;
+  propertyMachine;
+  iframeMockBSM;
+  iframeMockPSM;
+  serviceBSM;
+  servicePSM;
+  bsmPath;
+  psmPath;
+
+  visited = Array();
+  graphBSM = Graph();
+  graphPSM = Graph();
+
+  setTracePath(path: string) {};
+  setModels(p1, p2) {};
+  createiframeMockBSM(){};
+  testInit(){};
+  readTraces(){};
+  getNumOfTraces(){};
+  getTrace(index){};
+  replayBSM(iframeMock, service, trace){};
+  replayPSM(iframeMock, service, trace){};
+  staticAnalysis(){};
+  extractRC (machine, graph){};
+  xstateCrawler (machineObject, initStateOnJsonParsed, RCs, id, graph) {};  
 }
 
-export function getTrace(index) {
-  const path = './packages/xstate-inspect/src/traces.txt';
-  const traces = readTraces(path);
-  return traces[index];
+
+RobustnessAnalysis.prototype.setTracePath = function (path) {
+  this.tracePath = path;
+  this.readTraces();
+}
+RobustnessAnalysis.prototype.setModels = function(p1, p2) {
+  this.bsmPath = p1;
+  this.psmPath = p2;
 }
 
-export function replay(iframeMock, service, trace) {
+RobustnessAnalysis.prototype.createiframeMockBSM = function() {
+  const messages: any = [];
+  const iframe = new EventTarget() as HTMLIFrameElement;
+
+  (iframe as any).contentWindow = {
+    postMessage(ev) {
+      messages.push(ev);
+    }
+  };
+
+  iframe.setAttribute = () => {};
+
+  return {
+    iframe,
+    initConnection() {
+      iframe.dispatchEvent(new Event('load'));
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            type: 'xstate.inspecting'
+          }
+        })
+      );
+    },
+    flushMessages() {
+      const [...flushed] = messages;
+      messages.length = 0;
+      return flushed;
+    }
+  };
+};
+
+RobustnessAnalysis.prototype.testInit = async function() {
+  const devTools = createDevTools();
+
+  console.debug(this.bsmPath);
+  const behaviorMachineModule = await import(this.bsmPath);
+  this.behaviorMachine = behaviorMachineModule.behaviorMachine;
+  this.serviceBSM = interpret(this.behaviorMachine, {
+    devTools: true,
+  }).start(); 
+  this.iframeMockBSM = this.createiframeMockBSM();
+  devTools.register(this.serviceBSM);
+  inspect({iframe: this.iframeMockBSM.iframe,devTools,});
+  this.iframeMockBSM.initConnection();
+
+
+  const propertyMachineModule = await import(this.psmPath);
+  this.propertyMachine = propertyMachineModule.propertyMachine;
+  this.servicePSM = interpret(this.propertyMachine, {
+    devTools: true,
+  }).start();
+  this.iframeMockPSM = this.createiframeMockBSM();
+  devTools.register(this.servicePSM);
+  inspect({iframe: this.iframeMockPSM.iframe,devTools,});
+  this.iframeMockPSM.initConnection();
+  
+
+  //[0]. Get number of traces
+  const numOfTraces = this.getNumOfTraces();
+  console.debug(numOfTraces);
+  //[1]. Read traces
+  for (let x = 0; x < numOfTraces; x++){
+    let trace = this.getTrace(0);
+    this.replayBSM(this.iframeMockBSM, this.serviceBSM, trace);
+    let result = this.replayPSM(this.iframeMockPSM, this.servicePSM, trace);  
+    if (!result){
+      console.debug("Majid Babaei");
+      return;
+    } 
+  }
+}
+
+RobustnessAnalysis.prototype.readTraces = function() {
+  const file = readFileSync(this.tracePath, 'utf-8');
+  this.traces = file.split('\n');
+  return this.traces;
+}
+
+RobustnessAnalysis.prototype.getNumOfTraces = function() {
+  return this.traces.length;
+}
+
+RobustnessAnalysis.prototype.getTrace = function(index) {
+  return this.traces[index];
+}
+
+RobustnessAnalysis.prototype.replayBSM = function(iframeMock, service, trace) {
   // Process trace into <event,message> structure
   const eventMsg = trace.split(",");
   const event = eventMsg[0];
-  console.debug(event);
+  //console.debug(event);
 
-  // let msg = "";
-  // if(eventMsg.length > 1){
-  //   msg = eventMsg[1];
-  // }
   // TODO: msg need to be added
-  service.send({type:event});
+  service.send({ type: event });
   // Process the output from the interpreter to extract critical values
   let stt = "";
   iframeMock
-              .flushMessages()
-              .filter((message: any) => message.type === 'service.state')
-              .filter((message: any) => stt = message.state);
-  
-  let stateJSON = JSON.parse(stt)
-
-  // TODO: situations where might be more transitions should be handled
-  console.debug(stateJSON.transitions[0].target);
-  // TODO: extract variables from the configuration
+    .flushMessages()
+    .filter((message: any) => message.type === 'service.state')
+    .filter((message: any) => stt = message.state);
+    JSON.parse(stt);
+    // console.debug(stateJSON);
+    
+    /*
+    let stateJSON = JSON.parse(stt)
+    // TODO: situations where might be more transitions should be handled
+    console.debug(stateJSON.transitions[0].target);
+    // TODO: extract variables from the configuration
+    */
 }
+
+RobustnessAnalysis.prototype.replayPSM = function(iframeMock, service, trace) {
+  // Process trace into <event,message> structure
+  const eventMsg = trace.split(",");
+  const event = eventMsg[0];
+  //console.debug(event);
+
+  // TODO: msg need to be added
+  service.send({ type: event });
+  // Process the output from the interpreter to extract critical values
+  let stt = "";
+  iframeMock
+    .flushMessages()
+    .filter((message: any) => message.type === 'service.state')
+    .filter((message: any) => stt = message.state);
+    let stateJSON = JSON.parse(stt);
+    // console.debug(stateJSON);
+    const psmTrg = stateJSON.value;
+    if (psmTrg.indexOf("Bad") !== -1) {
+      console.debug("HIT BAD STATE");
+      // let OTCost = getCost(psmTrg);
+      return false;
+    }
+    /*
+    let stateJSON = JSON.parse(stt)
+    // TODO: situations where might be more transitions should be handled
+    console.debug(stateJSON.transitions[0].target);
+    // TODO: extract variables from the configuration
+    */
+}
+
 
 //static analysis
-export function staticAnalysis(behaviorMachine,propertyMachine) {
-  const RCB = extractRC(behaviorMachine);
-  const RCP = extractRC(propertyMachine);
+RobustnessAnalysis.prototype.staticAnalysis = function() {  
+  const RCB = this.extractRC(this.propertyMachine, this.graphBSM);
+  const RCP = this.extractRC(this.propertyMachine, this.graphPSM);
 
-  console.debug(RCB);
-  console.debug(RCP);
-
+  // console.debug(RCB);
+  // console.debug(RCP);
 }
 
-let visited = Array();
-function extractRC(machine) {
+
+RobustnessAnalysis.prototype.extractRC = function(machine, graph) {  
   const machineJSON = JSON.stringify(machine);
   const machineObject = JSON.parse(machineJSON);
 
   const initState = machineObject.initial;
   const id = machineObject.id;
-  
-  
-  // console.debug("OUTPUT:",initStateOnJsonParsed);
+
   let RCs = Array({});
-  if(!visited.includes(initState)){
-    visited.push(initState);
-    const initStateOnJson = JSON.stringify(machineObject.states[initState].on);
-    const initStateOnJsonParsed = JSON.parse(initStateOnJson);
-    xstateCrawler(initStateOnJsonParsed,RCs,id);
-  }
-  
-  showRC(RCs);
+  this.visited.push(initState);
+  const initStateOnJson = JSON.stringify(machineObject.states[initState].on);
+  const initStateOnJsonParsed = JSON.parse(initStateOnJson);
+  this.xstateCrawler(machineObject, initStateOnJsonParsed, RCs, id, graph);
+
+  /*
+  //showRC(RCs);
+  var serialized = graph.serialize();
+  console.debug(serialized);
+  */
   return machineObject;
 }
 
+/*
 function showRC(RCs){
   for (let x = 0; x < RCs.length-1; x++){
     console.debug("rc[id]: "+  RCs[x].id);
@@ -91,31 +237,61 @@ function showRC(RCs){
     console.debug("rc[target]: "+  RCs[x].target);
   }
 }
+*/
 
-// function xstateCrawler(machineObject){
-//   const initState = machineObject.initial;
-//   const initStateOnJson = JSON.stringify(machineObject.states[initState].on);
-//   const initStateOnJsonParsed = JSON.parse(initStateOnJson);
-//   console.debug("OUTPUT:",initStateOnJsonParsed);
-//   Object.keys(initStateOnJsonParsed).forEach(function(key){
-//     console.debug(key + '=>source:' + initStateOnJsonParsed[key][0].source);
-//     const trJson = JSON.stringify(initStateOnJsonParsed[key][0]);
-//     console.log(key + "==> " + trJson);
-//  });
-  
- function xstateCrawler(initStateOnJsonParsed, RC, id){
-  
-  Object.keys(initStateOnJsonParsed).forEach(function(key){
-    let source = initStateOnJsonParsed[key][0].source;
-    let event  = initStateOnJsonParsed[key][0].event;
-    let target = initStateOnJsonParsed[key][0].target;
-    RC.push({'id':id, 'source':source, 'event': event, 'target':target });
+
+RobustnessAnalysis.prototype.xstateCrawler = function(machineObject, initStateOnJsonParsed, RCs, id, graph) {  
+  let source, event, target;
+  Object.keys(initStateOnJsonParsed).forEach(function (key) {
+    source = initStateOnJsonParsed[key][0].source;
+    event = initStateOnJsonParsed[key][0].event;
+    target = initStateOnJsonParsed[key][0].target[0];
+    const rc = { 'id': id, 'source': source, 'event': event, 'target': target };
+    // console.debug(rc);
+    RCs.push(rc);
+
     // console.debug(key + '=>source:' + initStateOnJsonParsed[key][0].source);
     // const trJson = JSON.stringify(initStateOnJsonParsed[key][0]);
     // console.log(key + "==> " + trJson);
     // console.log(key + "==> parsed: " + JSON.parse(JSON.stringify(initStateOnJsonParsed[key][0])));
   });
- }
+  if ((!this.visited.includes(target)) && (typeof (target) != 'undefined')) {
+    graph.addEdge(source, target);
+    this.visited.push(target);
+    // console.debug('target: ' + target); 
+    const targetArray = target.split('.');
+    const targetOnJson = JSON.stringify(machineObject.states[targetArray[1]].on);
+    const targetOnJsonParsed = JSON.parse(targetOnJson);
+    this.xstateCrawler(machineObject, targetOnJsonParsed, RCs, id, graph);
+  }
+}
+
+// //OT cost ← getCost(γP , rcb)
+// function getCost(psmTrg){
+
+// }
+
+// //BT cost ← computeBTCost(RCB , RCP , rcb, rcp, γB , γP )
+// function computeBTCost(){
+
+// }
+
+// export function raRun(){
+//   //[0]. Get number of traces
+//   const numOfTraces = getNumOfTraces();
+//   console.debug(numOfTraces);
+//   //[1]. Read traces
+//   for (let x = 0; x < numOfTraces; x++){
+//     let trace = getTrace(0);
+//     replayBSM(iframeMockBSM, serviceBSM, trace);
+//     let result = replayPSM(iframeMockPSM, servicePSM, trace);  
+//     if (!result){
+//       console.debug("Majid Babaei");
+//       return;
+//     } 
+//   }
+// }
+
 
 
   // for (state in machineObject.states) {
@@ -129,3 +305,14 @@ function showRC(RCs){
 //getRCStepBSM (trace, msg, RCB ,γB)
 
 //getRCStepPSM (γ1.E, msg, RCP ,γP)
+
+// function xstateCrawler(machineObject){
+//   const initState = machineObject.initial;
+//   const initStateOnJson = JSON.stringify(machineObject.states[initState].on);
+//   const initStateOnJsonParsed = JSON.parse(initStateOnJson);
+//   console.debug("OUTPUT:",initStateOnJsonParsed);
+//   Object.keys(initStateOnJsonParsed).forEach(function(key){
+//     console.debug(key + '=>source:' + initStateOnJsonParsed[key][0].source);
+//     const trJson = JSON.stringify(initStateOnJsonParsed[key][0]);
+//     console.log(key + "==> " + trJson);
+//  });

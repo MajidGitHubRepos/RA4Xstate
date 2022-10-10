@@ -88,20 +88,19 @@ RobustnessAnalysis.prototype.createiframeMockBSM = function() {
 
 RobustnessAnalysis.prototype.testInit = async function() {
   const devTools = createDevTools();
-
-  console.debug(this.bsmPath);
-  const behaviorMachineModule = await import(this.bsmPath);
+  const bsmPath = this.bsmPath;
+  const behaviorMachineModule = await import(bsmPath);
   this.behaviorMachine = behaviorMachineModule.behaviorMachine;
   this.serviceBSM = interpret(this.behaviorMachine, {
     devTools: true,
-  }).start(); 
+  }).start();
   this.iframeMockBSM = this.createiframeMockBSM();
   devTools.register(this.serviceBSM);
   inspect({iframe: this.iframeMockBSM.iframe,devTools,});
   this.iframeMockBSM.initConnection();
 
-
-  const propertyMachineModule = await import(this.psmPath);
+  const psmPath = this.psmPath;
+  const propertyMachineModule = await import(psmPath);
   this.propertyMachine = propertyMachineModule.propertyMachine;
   this.servicePSM = interpret(this.propertyMachine, {
     devTools: true,
@@ -181,11 +180,11 @@ RobustnessAnalysis.prototype.replayPSM = function(iframeMock, service, trace) {
     .filter((message: any) => message.type === 'service.state')
     .filter((message: any) => stt = message.state);
     let stateJSON = JSON.parse(stt);
-    // console.debug(stateJSON);
     const psmTrg = stateJSON.value;
     if (psmTrg.indexOf("Bad") !== -1) {
       console.debug("HIT BAD STATE");
-      // let OTCost = getCost(psmTrg);
+      console.debug("stateJSON: "+ stateJSON);
+      //let OTCost = getCost(psmTrg);
       return false;
     }
     /*

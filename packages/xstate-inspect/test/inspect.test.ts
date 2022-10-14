@@ -24,17 +24,17 @@ afterEach(() => {
 
 describe('@Robustness Analysis of Varios Models', () => {
   window.open = jest.fn()
-it('simpleWrongMessage senario', () => {
+it('simpleWrongMessage senario', async () => {
   let ra = new RobustnessAnalysis();
-  // staticAnalysis(behaviorMachine,propertyMachine)
   const tracePath = './packages/xstate-inspect/src/traces.txt';
   const bsm = '../models/simpleWrongMessage/bsm';
   const psm = '../models/simpleWrongMessage/psm';
   ra.setTracePath(tracePath);
   ra.setModels(bsm,psm);
-  ra.testInit();
-  // raRun();
-
+  let acceptableCost = 2;
+  let TTCost = await ra.testInit(acceptableCost);
+  expect(parseInt(''+TTCost)).toEqual(1);
+  
 });
 
 })

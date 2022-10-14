@@ -44,12 +44,12 @@ export const propertyMachine = createMachine({
     Good: {
       on: {
         t1: { target: 'Good', actions:['logM1'] },
-        t2: { target: 'Bad', actions:['logM2','setCost'] },
+        t2: { target: 'Bad', actions:['logM2',() => assign({cost: 1})] },
       },
     },
     Bad: {
       on:{
-        t3: { target: 'Good', actions:['logM3','resetCost'] },
+        t3: { target: 'Good', actions:['logM3',() => assign({cost: 0})] },
       }
     },
   }
@@ -57,8 +57,6 @@ export const propertyMachine = createMachine({
   actions: {
       'logM1': () => console.log('t1 was processed in psm!'),
       'logM2': () => console.log('t2 was processed in psm!'),
-      'logM3': () => console.log('t3 was processed in psm!'),
-      'setCost': () => assign({cost: 1}),
-      'resetCost': () => assign({cost: 0})
+      'logM3': () => console.log('t3 was processed in psm!')
   }
 });

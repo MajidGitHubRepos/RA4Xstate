@@ -25,15 +25,21 @@ export class RobustnessAnalysis {
   servicePSM;
   bsmPath;
   psmPath;
+  OTCost;
+  BTCost;
+  TTCost;
+  acceptableCost;
+  static operationDone;
 
   visited = Array();
   graphBSM = Graph();
   graphPSM = Graph();
+  static context = {cost:0};
 
   setTracePath(path: string) {};
   setModels(p1, p2) {};
   createiframeMockBSM(){};
-  testInit(){};
+  testInit(acceptableCost){};
   readTraces(){};
   getNumOfTraces(){};
   getTrace(index){};
@@ -41,7 +47,10 @@ export class RobustnessAnalysis {
   replayPSM(iframeMock, service, trace){};
   staticAnalysis(){};
   extractRC (machine, graph){};
-  xstateCrawler (machineObject, initStateOnJsonParsed, RCs, id, graph) {};  
+  xstateCrawler (machineObject, initStateOnJsonParsed, RCs, id, graph) {};
+  getCost(actions){};
+  getCostInBTCost = function(actions){};
+  ComputeBTCost(actions){};  
 }
 
 
@@ -52,6 +61,7 @@ RobustnessAnalysis.prototype.setTracePath = function (path) {
 RobustnessAnalysis.prototype.setModels = function(p1, p2) {
   this.bsmPath = p1;
   this.psmPath = p2;
+  this.operationDone = false;
 }
 
 RobustnessAnalysis.prototype.createiframeMockBSM = function() {
@@ -86,7 +96,13 @@ RobustnessAnalysis.prototype.createiframeMockBSM = function() {
   };
 };
 
-RobustnessAnalysis.prototype.testInit = async function() {
+RobustnessAnalysis.prototype.testInit = async function(acceptableCost) {
+  // return {cost:1};
+  this.acceptableCost = acceptableCost;
+  this.OTCost = 0;
+  this.BTCost = 0;
+  this.TTCost = 0;
+  
   const devTools = createDevTools();
   const bsmPath = this.bsmPath;
   const behaviorMachineModule = await import(bsmPath);
@@ -110,6 +126,12 @@ RobustnessAnalysis.prototype.testInit = async function() {
   inspect({iframe: this.iframeMockPSM.iframe,devTools,});
   this.iframeMockPSM.initConnection();
   
+  this.context = this.propertyMachine._context;
+  console.debug(this.context);
+  this.staticAnalysis();
+  // console.debug(this.propertyMachine.withConfig);
+  // console.debug(this.propertyMachine.options);
+
 
   //[0]. Get number of traces
   const numOfTraces = this.getNumOfTraces();
@@ -119,11 +141,11 @@ RobustnessAnalysis.prototype.testInit = async function() {
     let trace = this.getTrace(0);
     this.replayBSM(this.iframeMockBSM, this.serviceBSM, trace);
     let result = this.replayPSM(this.iframeMockPSM, this.servicePSM, trace);  
-    if (!result){
-      console.debug("Majid Babaei");
-      return;
-    } 
+    if (result != -1){
+      return this.TTCost;
+    }
   }
+  return -1;
 }
 
 RobustnessAnalysis.prototype.readTraces = function() {
@@ -182,11 +204,22 @@ RobustnessAnalysis.prototype.replayPSM = function(iframeMock, service, trace) {
     let stateJSON = JSON.parse(stt);
     const psmTrg = stateJSON.value;
     if (psmTrg.indexOf("Bad") !== -1) {
-      console.debug("HIT BAD STATE");
-      console.debug("stateJSON: "+ stateJSON);
-      //let OTCost = getCost(psmTrg);
-      return false;
+      console.debug("------------------HIT BAD STATE------------------");
+      //update the cost in context
+      const actions =  stateJSON.actions;
+      this.OTCost += this.getCost(actions);
+      // console.debug(actions);
+      this.BTCost = this.ComputeBTCost(psmTrg);
+      this.TTCost = this.OTCost + this.BTCost;
+      if(this.TTCost > this.acceptableCost){
+        return -1;
+      }
+      // this.context['cost'] = this.TTCost;
+      // console.debug(this.context);
+      // this.operationDone = true;
+
     }
+    return this.TTCost;
     /*
     let stateJSON = JSON.parse(stt)
     // TODO: situations where might be more transitions should be handled
@@ -195,12 +228,97 @@ RobustnessAnalysis.prototype.replayPSM = function(iframeMock, service, trace) {
     */
 }
 
+RobustnessAnalysis.prototype.ComputeBTCost = function(src) {  
+  //find  all potential Good target states in the machine
+  const allStates = this.propertyMachine.config.states;
+  const allStatesKeys = Object.keys(allStates);
+  let allGoodStates = Array();
+  for (let x = 0; x < allStatesKeys.length; x++){
+    // We assume all Good states has a "Good" prefix
+    if (allStatesKeys[x].indexOf("Good") !== -1) {
+      allGoodStates.push(allStatesKeys[x]);
+    }
+  }
+  // console.debug(allGoodStates);
+
+  //find the best path from all potential targets
+  var serialized = this.graphPSM.serialize();
+  // console.debug(serialized);  
+  // console.debug(this.graphPSM.hasCycle());
+  // console.debug(this.propertyMachine.states[src].config.on);
+
+  let path = this.graphPSM.shortestPath("#"+this.propertyMachine.id+"."+src,"#"+this.propertyMachine.id+"."+allGoodStates[0]);
+  console.debug(path);
+  //path: [ '#property.Bad', '#property.X', '#property.Good', weight: 2 ]
+  
+  //calculate the cost in the path
+  for (let x1 = 1; x1 < path.length; x1++){
+    let tmpTrg = path[x1].split(".")[1];
+    if (tmpTrg == 'Good'){
+      break;
+    }
+    // let xxx = this.propertyMachine.idMap['property.Good'].__cache.on['t2'][0].actions[1];
+    // console.debug(xxx);
+
+
+    let allOutGoingTransitions = this.propertyMachine.idMap[this.propertyMachine.id+'.'+src].__cache.on;
+    // console.debug("<<<<<<<-1>>>>>>");
+    // console.debug(allOutGoingTransitions);
+
+    //find the right transition
+    for (const [key, value] of Object.entries(allOutGoingTransitions)) {
+      // console.debug("<<<<<<<0>>>>>>");
+      // console.debug(allOutGoingTransitions[key][0].target[0].id);
+      // console.debug(tmpTrg.includes(allOutGoingTransitions[key].target)); // true
+      if (allOutGoingTransitions[key][0].target[0].id.includes(tmpTrg)){
+        // console.debug("<<<<<<<1>>>>>>");
+        // console.debug(allOutGoingTransitions[key][0].actions[1]);
+        let act = allOutGoingTransitions[key][0].actions;
+        this.BTCost += this.getCost(act);
+        // console.debug("<<<<<<<2>>>>>>");
+        // console.debug(this.BTCost);
+        break;
+      }
+    }
+  }
+
+  return this.BTCost;
+  // console.debug("BTCOST====>");
+  // console.debug(this.BTCost);
+
+}
+
+RobustnessAnalysis.prototype.getCost = function(actions) {  
+  for (let x = 0 ; x < actions.length; x++){
+    if (!actions[x].type.includes("log")){
+      this.context.cost = parseInt(actions[x].type.split(":")[1].split(" }")[0]);
+      // console.debug("this.context.cost:"+this.context.cost);
+      return this.context.cost;      
+    }
+  }
+}
+
+// RobustnessAnalysis.prototype.getCostInBTCost = function(actions) {  
+//   console.debug("In getCostInBTCost");
+//   console.debug(actions.length);
+//   for (let x = 0 ; x < actions.length; x++){
+//     if (!actions[x].includes("log")){
+//       console.debug(actions[x]);
+//       this.context.cost = parseInt(actions[x].type.split(":")[1].split(" }")[0]);
+//       return this.context.cost;      
+//     }
+//   }
+// }
+
+
 
 //static analysis
 RobustnessAnalysis.prototype.staticAnalysis = function() {  
-  const RCB = this.extractRC(this.propertyMachine, this.graphBSM);
+  const RCB = this.extractRC(this.behaviorMachine, this.graphBSM);
   const RCP = this.extractRC(this.propertyMachine, this.graphPSM);
 
+  // var serialized = this.graphBSM.serialize();
+  // console.debug(serialized);
   // console.debug(RCB);
   // console.debug(RCP);
 }
@@ -219,11 +337,11 @@ RobustnessAnalysis.prototype.extractRC = function(machine, graph) {
   const initStateOnJsonParsed = JSON.parse(initStateOnJson);
   this.xstateCrawler(machineObject, initStateOnJsonParsed, RCs, id, graph);
 
-  /*
+  
   //showRC(RCs);
-  var serialized = graph.serialize();
-  console.debug(serialized);
-  */
+  // var serialized = graph.serialize();
+  // console.debug(serialized);
+  
   return machineObject;
 }
 
@@ -265,15 +383,6 @@ RobustnessAnalysis.prototype.xstateCrawler = function(machineObject, initStateOn
   }
 }
 
-// //OT cost ← getCost(γP , rcb)
-// function getCost(psmTrg){
-
-// }
-
-// //BT cost ← computeBTCost(RCB , RCP , rcb, rcp, γB , γP )
-// function computeBTCost(){
-
-// }
 
 // export function raRun(){
 //   //[0]. Get number of traces

@@ -241,6 +241,7 @@ RobustnessAnalysis.prototype.ComputeBTCost = function(src) {
   }
   if(allGoodStates.length == 0) return;
 
+  
   //find the best path from all potential targets
   var serialized = this.graphPSM.serialize();
   console.debug(serialized);  
